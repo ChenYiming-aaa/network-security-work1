@@ -12,4 +12,5 @@ vulhub/
 server.log
 *.log
 !cve-ssti/evidence/*.log
+!cve-2021-42013/evidence/*.log
 !evidence_api_verification.log
