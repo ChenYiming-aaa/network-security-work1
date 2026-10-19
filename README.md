@@ -72,7 +72,7 @@ Triggers on **every push / pull request**:
 - `![Bandit report](screenshots/bandit-report.png)` — Bandit HTML artifact
 - `![pip-audit result](screenshots/pip-audit-report.png)` — pip-audit clean output (and the flagged run before the dependency upgrade, if captured)
 
-**Pipeline link (last successful run):** `<FILL IN: https://github.com/<user>/<repo>/actions/runs/<id>>`
+**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39212736509
 
 ---
 
@@ -134,7 +134,7 @@ Regression: `/?name=World` → `Hello World` (200), `/?name=Alice_2026` → work
 
 | Item | Location |
 |---|---|
-| Public Git repository | `<FILL IN repo URL>` |
+| Public Git repository | https://github.com/ChenYiming-aaa/network-security-work1 |
 | This README | `README.md` |
 | CI pipeline link (last successful run) | `<FILL IN actions URL>` |
 | Fixed files folder | `cve-ssti/fix/` (`src/app.py`, `app_fix.patch`, before/after evidence) |
