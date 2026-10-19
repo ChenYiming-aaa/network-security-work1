@@ -1,6 +1,6 @@
 # Work 1 — Secure REST API + CI/CD Security Scanning + CVE-2021-42013 Reproduction & Fix
 
-Network Security LAB (HDU). Author: **Chen Yiming, HDU 23320218**.
+Author: **Chen Yiming, HDU 23320218**.
 
 This repository contains two parts:
 
