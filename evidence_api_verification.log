@@ -1,39 +1,146 @@
+==============================================================
+ Work 1 - Secure REST API 验证日志 (evidence_api_verification.log)
+ Target: http://127.0.0.1:5000   Date: 2026-10-19 17:11:56 +0800
+ 每条用例均附执行的 curl 命令与完整响应头 (curl -i)
+==============================================================
+
 === [1] 无 token 访问受保护端点 (期望 401) ===
+[2026-10-19 17:11:56 +0800] $ curl -s -i http://127.0.0.1:5000/api/data
+
+HTTP/1.1 401 UNAUTHORIZED
+Server: Werkzeug/3.1.9 Python/3.13.14
+Date: Mon, 19 Oct 2026 09:11:56 GMT
+Content-Type: application/json
+Content-Length: 33
+Connection: close
+
 {"error":"Missing Bearer token"}
 
-HTTP 401
+
 === [2] 伪造 token 访问 (期望 401) ===
+[2026-10-19 17:11:57 +0800] $ curl -s -i http://127.0.0.1:5000/api/data -H "Authorization: Bearer fake.token.here"
+
+HTTP/1.1 401 UNAUTHORIZED
+Server: Werkzeug/3.1.9 Python/3.13.14
+Date: Mon, 19 Oct 2026 09:11:57 GMT
+Content-Type: application/json
+Content-Length: 26
+Connection: close
+
 {"error":"Invalid token"}
 
-HTTP 401
-=== [3] 注册用户 (期望 201, 返回 bcrypt 哈希前缀) ===
-{"message":"user registered","user":{"display_name":"Alice","password_hash_prefix":"$2b$12$aJABUCk8azwCp14lVVkHcu","username":"alice"}}
 
-HTTP 201
-=== [4] 重复注册 (期望 409) ===
+=== [3] 注册用户 alice (期望 201, 返回 bcrypt 哈希前缀) ===
+[2026-10-19 17:11:57 +0800] $ curl -s -i -X POST http://127.0.0.1:5000/api/users -H "Content-Type: application/json" -d '{"username":"alice","password":"Str0ngPass!","display_name":"Alice"}'
+
+HTTP/1.1 201 CREATED
+Server: Werkzeug/3.1.9 Python/3.13.14
+Date: Mon, 19 Oct 2026 09:11:58 GMT
+Content-Type: application/json
+Content-Length: 136
+Connection: close
+
+{"message":"user registered","user":{"display_name":"Alice","password_hash_prefix":"$2b$12$/4bkZYcoRFMA0SzY67pA6u","username":"alice"}}
+
+
+=== [4] 重复注册同一用户名 (期望 409) ===
+[2026-10-19 17:11:58 +0800] $ curl -s -i -X POST http://127.0.0.1:5000/api/users -H "Content-Type: application/json" -d '{"username":"alice","password":"Str0ngPass!","display_name":"Alice"}'
+
+HTTP/1.1 409 CONFLICT
+Server: Werkzeug/3.1.9 Python/3.13.14
+Date: Mon, 19 Oct 2026 09:11:59 GMT
+Content-Type: application/json
+Content-Length: 36
+Connection: close
+
 {"error":"username already exists"}
 
-HTTP 409
+
 === [5] 错误密码登录 (期望 401) ===
+[2026-10-19 17:11:59 +0800] $ curl -s -i -X POST http://127.0.0.1:5000/auth/login -H "Content-Type: application/json" -d '{"username":"alice","password":"WrongPass!"}'
+
+HTTP/1.1 401 UNAUTHORIZED
+Server: Werkzeug/3.1.9 Python/3.13.14
+Date: Mon, 19 Oct 2026 09:12:00 GMT
+Content-Type: application/json
+Content-Length: 32
+Connection: close
+
 {"error":"invalid credentials"}
 
-HTTP 401
+
 === [6] SQL 注入登录 ' OR 1=1-- (期望 401, 攻击失败) ===
+[2026-10-19 17:12:00 +0800] $ curl -s -i -X POST http://127.0.0.1:5000/auth/login -H "Content-Type: application/json" -d '{"username":"alice' OR 1=1--","password":"x"}'
+
+HTTP/1.1 401 UNAUTHORIZED
+Server: Werkzeug/3.1.9 Python/3.13.14
+Date: Mon, 19 Oct 2026 09:12:00 GMT
+Content-Type: application/json
+Content-Length: 32
+Connection: close
+
 {"error":"invalid credentials"}
 
-HTTP 401
+
 === [7] 正确密码登录 (期望 200 + JWT) ===
-{"expires_in":1800,"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJhbGljZSIsImlhdCI6MTc5MjM4MzQ4NSwiZXhwIjoxNzkyMzg1Mjg1fQ.ORtwIT6vQpWzmmBC5s5yjAqYnxaNiyHnFnYsoBv3-qs","token_type":"Bearer"}
+[2026-10-19 17:12:01 +0800] $ curl -s -i -X POST http://127.0.0.1:5000/auth/login -H "Content-Type: application/json" -d '{"username":"alice","password":"Str0ngPass!"}'
+
+HTTP/1.1 200 OK
+Server: Werkzeug/3.1.9 Python/3.13.14
+Date: Mon, 19 Oct 2026 09:12:01 GMT
+Content-Type: application/json
+Content-Length: 220
+Connection: close
+
+{"expires_in":1800,"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJhbGljZSIsImlhdCI6MTc5MjQwMTEyMSwiZXhwIjoxNzkyNDAyOTIxfQ.1T8O7RfedarJ9JK-cOhPxLd481casLtQpSrQxQEna18","token_type":"Bearer"}
+
+
 
 === [8] 携带有效 JWT 访问 /api/data (期望 200 + 数据) ===
+[2026-10-19 17:12:02 +0800] $ curl -s -i http://127.0.0.1:5000/api/data -H "Authorization: Bearer $TOKEN"   # TOKEN 取自 [7] 的登录响应
+
+HTTP/1.1 200 OK
+Server: Werkzeug/3.1.9 Python/3.13.14
+Date: Mon, 19 Oct 2026 09:12:03 GMT
+Content-Type: application/json
+Content-Length: 181
+Connection: close
+
 {"posts":[{"author":"alice","body":"Hello, secure world!","id":1,"title":"First post"},{"author":"bob","body":"Always use parameterized queries.","id":2,"title":"Security notes"}]}
 
-HTTP 200
-=== [9] XSS payload 存入 display_name (期望输出被转义) ===
-{"message":"user registered","user":{"display_name":"&lt;script&gt;alert(1)&lt;/script&gt;","password_hash_prefix":"$2b$12$MZgLcIrxFRH3APd96ZGP2O","username":"eve"}}
 
-HTTP 201
+=== [9] XSS payload 存入 display_name (期望输出被转义) ===
+[2026-10-19 17:12:03 +0800] $ curl -s -i -X POST http://127.0.0.1:5000/api/users -H "Content-Type: application/json" -d '{"username":"eve","password":"Str0ngPass!","display_name":"<script>alert(1)</script>"}'
+
+HTTP/1.1 201 CREATED
+Server: Werkzeug/3.1.9 Python/3.13.14
+Date: Mon, 19 Oct 2026 09:12:04 GMT
+Content-Type: application/json
+Content-Length: 166
+Connection: close
+
+{"message":"user registered","user":{"display_name":"&lt;script&gt;alert(1)&lt;/script&gt;","password_hash_prefix":"$2b$12$jHek.BZnyW2Adgsg4h34ge","username":"eve"}}
+
+
 === [10] 篡改签名的 JWT (期望 401) ===
+[2026-10-19 17:12:04 +0800] $ curl -s -i http://127.0.0.1:5000/api/data -H "Authorization: Bearer $TAMPERED"   # 末位签名字符改为 X
+
+HTTP/1.1 401 UNAUTHORIZED
+Server: Werkzeug/3.1.9 Python/3.13.14
+Date: Mon, 19 Oct 2026 09:12:04 GMT
+Content-Type: application/json
+Content-Length: 26
+Connection: close
+
 {"error":"Invalid token"}
 
-HTTP 401
+
+
+=== [附] JWT_SECRET 缺失时启动直接失败 (P2-9 加固验证) ===
+[2026-10-19 17:13:05 +0800] $ env -u JWT_SECRET python app.py
+
+    ...<2 lines>...
+    )
+RuntimeError: JWT_SECRET environment variable is required. Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
+
+=== 日志结束 2026-10-19 17:13:06 +0800 ===

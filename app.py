@@ -1,10 +1,8 @@
 """
 Secure REST API - Network Security LAB Work 1
 
-安全措施:
-  1. 防 SQLi  : 全部使用 SQLite 参数化查询 (Prepared Statements)
-  2. 防 XSS   : 所有返回给客户端的用户输入均经 markupsafe.escape 转义
-  3. 认证     : JWT (PyJWT, 显式 HS256, 校验签名与过期时间) + bcrypt 密码哈希
+安全措施: 防 SQLi（参数化查询）、防 XSS（输出转义）、JWT + bcrypt 认证。
+详见 README.md。
 """
 
 import os
@@ -19,15 +17,18 @@ from markupsafe import escape
 app = Flask(__name__)
 
 DATABASE = os.environ.get("APP_DB_PATH", "users.db")
-# 密钥从环境变量读取，绝不硬编码提交到仓库
-JWT_SECRET = os.environ.get("JWT_SECRET", "dev-only-secret-change-me")
+
+# 密钥只从环境变量读取，不设默认值：没配置就直接启动失败，避免误用弱密钥上线
+if "JWT_SECRET" not in os.environ:
+    raise RuntimeError(
+        "JWT_SECRET environment variable is required. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
+JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
 TOKEN_TTL_MINUTES = 30
 
 
-# ---------------------------------------------------------------------------
-# 数据库（每次请求一个连接，全部使用 ? 占位符参数化查询，防止 SQL 注入）
-# ---------------------------------------------------------------------------
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(DATABASE)
@@ -72,9 +73,7 @@ def init_db():
     db.close()
 
 
-# ---------------------------------------------------------------------------
-# JWT 认证中间件：校验签名、过期时间；显式限制算法，防止 alg 混淆攻击
-# ---------------------------------------------------------------------------
+# JWT 中间件：校验签名与过期时间；algorithms 白名单防止 alg 混淆攻击
 def require_jwt(fn):
     from functools import wraps
 
@@ -95,9 +94,6 @@ def require_jwt(fn):
     return wrapper
 
 
-# ---------------------------------------------------------------------------
-# 端点 1: POST /api/users —— 用户注册（演示 bcrypt 密码哈希存储）
-# ---------------------------------------------------------------------------
 @app.post("/api/users")
 def register_user():
     data = request.get_json(silent=True) or {}
@@ -110,7 +106,7 @@ def register_user():
     if len(password) < 8:
         return jsonify({"error": "password must be at least 8 characters"}), 400
 
-    # bcrypt: 内置随机盐 + 慢哈希，抗暴力破解
+    # bcrypt 自带随机盐 + 慢哈希，抗暴力破解；返回哈希前缀证明没存明文
     password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode()
 
     db = get_db()
@@ -130,7 +126,6 @@ def register_user():
                 "user": {
                     "username": username,
                     "display_name": escape(display_name or username),
-                    # 仅展示哈希前 29 位（$2b$12$ + 22 字符盐），证明密码未存明文
                     "password_hash_prefix": password_hash[:29],
                 },
             }
@@ -139,9 +134,6 @@ def register_user():
     )
 
 
-# ---------------------------------------------------------------------------
-# 端点 2: POST /auth/login —— 验证凭据，签发 JWT
-# ---------------------------------------------------------------------------
 @app.post("/auth/login")
 def login():
     data = request.get_json(silent=True) or {}
@@ -153,7 +145,7 @@ def login():
         "SELECT id, username, password_hash FROM users WHERE username = ?", (username,)
     ).fetchone()
 
-    # 用户不存在时也执行一次哈希比较，避免时序侧信道区分“用户不存在/密码错误”
+    # 用户不存在时也比对一次假哈希：让"用户不存在"和"密码错误"耗时一致，防时序侧信道
     stored_hash = row["password_hash"].encode() if row else b"$2b$12$" + b"x" * 53
     try:
         ok = bcrypt.checkpw(password.encode("utf-8"), stored_hash)
@@ -173,9 +165,6 @@ def login():
     return jsonify({"token": token, "token_type": "Bearer", "expires_in": TOKEN_TTL_MINUTES * 60})  # nosec B105 - "Bearer" 是 HTTP 认证方案名，不是密码
 
 
-# ---------------------------------------------------------------------------
-# 端点 3: GET /api/data —— 受 JWT 保护的数据接口（返回内容做 XSS 转义）
-# ---------------------------------------------------------------------------
 @app.get("/api/data")
 @require_jwt
 def get_data():
@@ -184,7 +173,7 @@ def get_data():
     posts = [
         {
             "id": r["id"],
-            "author": str(escape(r["author"])),   # 防 XSS：输出转义
+            "author": str(escape(r["author"])),  # 防 XSS：输出一律转义
             "title": str(escape(r["title"])),
             "body": str(escape(r["body"])),
         }
