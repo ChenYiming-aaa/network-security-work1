@@ -20,7 +20,7 @@ jobs:
 
       - name: SAST - Bandit (static security analysis)
         run: |
-          pip install bandit
+          pip install -q bandit
           # 先在控制台打印扫描结论（CI 日志里可见，便于留证），medium+ 有问题即失败
           bandit -r . -f screen --severity-level medium
           # 再产出一份 HTML 报告作为 artifact
@@ -28,7 +28,7 @@ jobs:
 
       - name: SCA - pip-audit (dependency vulnerability check)
         run: |
-          pip install pip-audit
+          pip install -q pip-audit
           # Audits pinned requirements against the PyPA vulnerability database; non-zero exit on any known CVE
           pip-audit -r requirements.txt --strict
 
