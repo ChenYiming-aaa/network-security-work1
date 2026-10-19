@@ -63,12 +63,14 @@ Full request/response evidence: `../evidence_api_verification.log` (10 test case
 Triggers on **every push / pull request**:
 
 1. **SAST — Bandit**: static security analysis of the code, HTML report uploaded as a build artifact; medium+ severity findings fail the build.
-2. **SCA — Safety**: checks pinned dependencies in `requirements.txt` against a vulnerability database.
+2. **SCA — pip-audit** (PyPA): checks the pinned dependencies in `requirements.txt` against the PyPA vulnerability database; any known CVE fails the build.
+   - *Real catch*: the initial pins (Flask 3.0.3, PyJWT 2.9.0) were flagged with 18 known advisories (e.g. PYSEC-2026-2151, PYSEC-2025-183). Dependencies were upgraded to Flask 3.1.3 / PyJWT 2.15.0, after which the audit is clean — demonstrating exactly why SCA belongs in CI.
 3. **Smoke test**: boots the API and asserts `/health` returns 200.
 
 📎 *Screenshot placeholders (add after first successful run):*
 - `![CI pipeline passing](screenshots/ci-pipeline-success.png)` — Actions run page (green)
 - `![Bandit report](screenshots/bandit-report.png)` — Bandit HTML artifact
+- `![pip-audit result](screenshots/pip-audit-report.png)` — pip-audit clean output (and the flagged run before the dependency upgrade, if captured)
 
 **Pipeline link (last successful run):** `<FILL IN: https://github.com/<user>/<repo>/actions/runs/<id>>`
 

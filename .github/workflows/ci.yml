@@ -22,10 +22,11 @@ jobs:
           bandit -r . -f html -o bandit-report.html
           bandit -r . --severity-level medium
 
-      - name: SCA - Safety (dependency vulnerability check)
+      - name: SCA - pip-audit (dependency vulnerability check)
         run: |
-          pip install safety==2.3.5
-          safety check --full-report
+          pip install pip-audit
+          # Audits pinned requirements against the PyPA vulnerability database; non-zero exit on any known CVE
+          pip-audit -r requirements.txt --strict
 
       - name: Smoke test - API starts and health endpoint responds
         run: |
