@@ -67,10 +67,13 @@ Triggers on **every push / pull request**:
    - *Real catch*: the initial pins (Flask 3.0.3, PyJWT 2.9.0) were flagged with 18 known advisories (e.g. PYSEC-2026-2151, PYSEC-2025-183). Dependencies were upgraded to Flask 3.1.3 / PyJWT 2.15.0, after which the audit is clean — demonstrating exactly why SCA belongs in CI.
 3. **Smoke test**: boots the API and asserts `/health` returns 200.
 
-📎 *Screenshot placeholders (add after first successful run):*
-- `![CI pipeline passing](screenshots/ci-pipeline-success.png)` — Actions run page (green)
-- `![Bandit report](screenshots/bandit-report.png)` — Bandit HTML artifact
-- `![pip-audit result](screenshots/pip-audit-report.png)` — pip-audit clean output (and the flagged run before the dependency upgrade, if captured)
+**Screenshots:**
+
+![CI pipeline passing](screenshots/ci-pipeline-success.png)
+*GitHub Actions run #2 — Status: Success (Bandit SAST + pip-audit SCA + smoke test), bandit-report artifact produced.*
+
+![Bandit report](screenshots/bandit-report.png)
+*Bandit HTML report — 0 issues found (194 lines of code scanned). Identical to the CI artifact.*
 
 **Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39212736509
 
@@ -101,7 +104,15 @@ curl 'http://localhost:8000/?name=%7B%25%20for%20c%20in%20%5B%5D...'   # -> uid=
 
 Evidence: `cve-ssti/evidence/reproduce_before_fix.log` — expression evaluation **and** real command output (`id`, `head -n1 /etc/passwd`).
 
-📎 *Screenshot placeholder:* `![SSTI before fix](cve-ssti/evidence/before-fix-browser.png)`
+**Screenshot — SSTI confirmed (before fix):**
+
+![SSTI before fix](cve-ssti/evidence/before-fix-ssti.png)
+*`/?name={{233*233}}` is evaluated by the template engine and returns "Hello 54289".*
+
+**Screenshot — RCE (before fix):**
+
+![RCE before fix](cve-ssti/evidence/before-fix-rce.png)
+*The Jinja2 gadget-chain payload executes `id` on the server: `uid=33(www-data) gid=33(www-data) groups=33(www-data),0(root)`.*
 
 ### Root cause analysis
 
@@ -126,7 +137,13 @@ Identical payloads replayed (`cve-ssti/evidence/verify_after_fix.log`):
 
 Regression: `/?name=World` → `Hello World` (200), `/?name=Alice_2026` → works — normal functionality preserved.
 
-📎 *Screenshot placeholders:* `![after fix rejected](cve-ssti/evidence/after-fix-rejected.png)`, `![regression ok](cve-ssti/evidence/regression-ok.png)`
+**Screenshots — attack replay after fix + regression:**
+
+![after fix rejected](cve-ssti/evidence/after-fix-rejected.png)
+*The same payload `{{233*233}}` is now rejected with HTTP 400 before reaching the template engine.*
+
+![regression ok](cve-ssti/evidence/regression-ok.png)
+*Normal functionality preserved: `/?name=World` still returns "Hello World".*
 
 ---
 
@@ -136,13 +153,10 @@ Regression: `/?name=World` → `Hello World` (200), `/?name=Alice_2026` → work
 |---|---|
 | Public Git repository | https://github.com/ChenYiming-aaa/network-security-work1 |
 | This README | `README.md` |
-| CI pipeline link (last successful run) | `<FILL IN actions URL>` |
+| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39212736509 |
 | Fixed files folder | `cve-ssti/fix/` (`src/app.py`, `app_fix.patch`, before/after evidence) |
 
-## Screenshot TODO list (manual)
+## Notes
 
-1. `screenshots/ci-pipeline-success.png` — GitHub Actions green run
-2. `screenshots/bandit-report.png` — Bandit HTML artifact
-3. `cve-ssti/evidence/before-fix-browser.png` — browser/curl showing `Hello 54289` + `uid=33(...)`
-4. `cve-ssti/evidence/after-fix-rejected.png` — same payload returning 400
-5. `cve-ssti/evidence/regression-ok.png` — `Hello World` after fix
+- `screenshots/bandit-report.html` is the local copy of the Bandit HTML report (identical to the CI artifact `bandit-report`, run #2); the committed `bandit-report.png` is its screenshot.
+- The Vulhub working clone (`vulhub/`) is kept outside the repository on purpose; only the reproduction/fix artifacts and evidence are committed.
