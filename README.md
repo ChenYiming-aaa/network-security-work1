@@ -75,7 +75,9 @@ Triggers on **every push / pull request**:
 ![Bandit report](screenshots/bandit-report.png)
 *Bandit HTML report — 0 issues found (194 lines of code scanned). Identical to the CI artifact.*
 
-**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39212736509
+**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39231744775
+
+*(The screenshots above are from run #2; the linked run is the latest successful run, triggered by the commit that added the CVE-2021-42013 part.)*
 
 ---
 
@@ -186,7 +188,7 @@ Before choosing CVE-2021-42013 I reproduced an SSTI → RCE chain on the Vulhub 
 |---|---|
 | Public Git repository | https://github.com/ChenYiming-aaa/network-security-work1 |
 | This README | `README.md` |
-| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39212736509 |
+| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39231744775 |
 | Fixed files folder | `cve-2021-42013/fix/` (`Dockerfile`, `docker-compose.yml`, originals in `fix/original/`) |
 | CVE reproduction & verification evidence | `cve-2021-42013/evidence/` (logs + screenshots) |
 | Root cause analysis | `cve-2021-42013/root-cause-analysis.md` |
