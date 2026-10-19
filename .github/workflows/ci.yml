@@ -21,7 +21,9 @@ jobs:
       - name: SAST - Bandit (static security analysis)
         run: |
           pip install bandit
-          # 一次扫描同时产出 HTML 报告（artifact）并按 medium+ 严重级别决定成败
+          # 先在控制台打印扫描结论（CI 日志里可见，便于留证），medium+ 有问题即失败
+          bandit -r . -f screen --severity-level medium
+          # 再产出一份 HTML 报告作为 artifact
           bandit -r . -f html -o bandit-report.html --severity-level medium
 
       - name: SCA - pip-audit (dependency vulnerability check)
