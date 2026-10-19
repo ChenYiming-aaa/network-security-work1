@@ -81,7 +81,9 @@ Triggers on **every push / pull request**:
 ![pip-audit output](screenshots/pip-audit-scan.png)
 *SCA — pip-audit on the pinned dependencies: "No known vulnerabilities found".*
 
-**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39231744775
+**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39236129503
+
+Both trigger paths are exercised in this repository: push runs (the links above) and a pull-request run — PR #1 (https://github.com/ChenYiming-aaa/network-security-work1/pull/1) ran the same pipeline on the `pull_request` event and passed before being merged.
 
 ---
 
@@ -220,7 +222,7 @@ The formal lab report — title page (lab number and title, variant, Surname and
 |---|---|
 | Public Git repository | https://github.com/ChenYiming-aaa/network-security-work1 |
 | This README | `README.md` |
-| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39231744775 |
+| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39236129503 |
 | Fixed files folder | `cve-2021-42013/fix/` (`Dockerfile`, `docker-compose.yml`, originals in `fix/original/`) |
 | CVE reproduction & verification evidence | `cve-2021-42013/evidence/` (logs + screenshots) |
 | Root cause analysis | `cve-2021-42013/root-cause-analysis.md` |
