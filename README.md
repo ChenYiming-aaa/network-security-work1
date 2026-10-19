@@ -62,26 +62,26 @@ Full request/response evidence (10 test cases, including the failure branches): 
 
 Triggers on **every push / pull request**:
 
-1. **SAST — Bandit**: static security analysis of the code, HTML report uploaded as a build artifact; medium+ severity findings fail the build.
+1. **SAST — Bandit**: static security analysis of the code; the verdict is printed to the job log and an HTML report is uploaded as a build artifact; medium+ severity findings fail the build.
 2. **SCA — pip-audit** (PyPA): checks the pinned dependencies in `requirements.txt` against the PyPA vulnerability database; any known advisory fails the build.
    - This actually caught something: the initial pins (Flask 3.0.3, PyJWT 2.9.0) were flagged with 18 known advisories (e.g. PYSEC-2026-2151, PYSEC-2025-183). Upgrading to Flask 3.1.3 / PyJWT 2.15.0 cleared the audit — a concrete demonstration of why SCA belongs in the pipeline.
 3. **Smoke test**: boots the API and asserts `/health` returns 200.
 
-**Screenshots:**
+**Screenshots — all taken from the Actions page of run #17:**
 
 ![CI pipeline passing](screenshots/ci-pipeline-success.png)
-*GitHub Actions run #7 — Status: Success (Bandit SAST + pip-audit SCA + smoke test), 31s, bandit-report artifact produced.*
+*Run #17 — Status: Success, 38s, one artifact (`bandit-report`) produced.*
 
-![Bandit terminal output](screenshots/bandit-scan-terminal.png)
-*Bandit run output: "No issues identified" with the full severity counters (Undefined/Low/Medium/High = 0) and 183 lines of code scanned. The one `#nosec B105` on the `"Bearer"` literal is a documented false positive — it is the HTTP auth scheme name, not a password.*
+![Bandit SAST step log in GitHub Actions](screenshots/ci-bandit-log.png)
+*The SAST step log inside the run: Bandit reports "No issues identified", 183 lines of code scanned and every severity counter (Undefined/Low/Medium/High) at zero, then writes `bandit-report.html` for the artifact. The single `#nosec B105` on the `"Bearer"` literal is a documented false positive — it is the HTTP auth scheme name, not a password.*
+
+![pip-audit SCA step log in GitHub Actions](screenshots/ci-pip-audit-log.png)
+*The SCA step log inside the run: pip-audit reports "No known vulnerabilities found" for the pinned dependencies.*
 
 ![Bandit HTML report](screenshots/bandit-report.png)
-*Bandit HTML report — 0 issues found (183 lines of code scanned). Identical to the CI artifact.*
+*The `bandit-report` artifact itself — 0 issues found (183 lines of code scanned). Kept as a second view of the same scan.*
 
-![pip-audit output](screenshots/pip-audit-scan.png)
-*SCA — pip-audit on the pinned dependencies: "No known vulnerabilities found".*
-
-**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39236584920
+**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39275027221
 
 Both trigger paths are exercised in this repository: push runs (the links above) and a pull-request run — PR #1 (https://github.com/ChenYiming-aaa/network-security-work1/pull/1) ran the same pipeline on the `pull_request` event and passed before being merged.
 
@@ -222,7 +222,7 @@ The formal lab report — title page (lab number and title, variant, Surname and
 |---|---|
 | Public Git repository | https://github.com/ChenYiming-aaa/network-security-work1 |
 | This README | `README.md` |
-| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39236584920 |
+| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39275027221 |
 | Fixed files folder | `cve-2021-42013/fix/` (`Dockerfile`, `docker-compose.yml`, originals in `fix/original/`) |
 | CVE reproduction & verification evidence | `cve-2021-42013/evidence/` (logs + screenshots) |
 | Root cause analysis | `cve-2021-42013/root-cause-analysis.md` |
