@@ -8,7 +8,7 @@ bandit-report.html
 # vulhub working clone (heavy, kept local)
 work1-vulhub/
 vulhub/
-screenshots/
+
 server.log
 *.log
 !cve-ssti/evidence/*.log
