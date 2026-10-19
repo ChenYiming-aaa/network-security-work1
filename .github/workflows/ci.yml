@@ -1,0 +1,42 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: SAST - Bandit (static security analysis)
+        run: |
+          pip install bandit
+          # 输出 HTML 报告（作为 artifact 上传）并在终端输出结果，发现问题则流水线失败
+          bandit -r . -f html -o bandit-report.html
+          bandit -r . --severity-level medium
+
+      - name: SCA - Safety (dependency vulnerability check)
+        run: |
+          pip install safety==2.3.5
+          safety check --full-report
+
+      - name: Smoke test - API starts and health endpoint responds
+        run: |
+          python -c "from app import init_db; init_db()" 
+          nohup python -m flask --app app run --port 5000 &
+          sleep 3
+          curl -sf http://127.0.0.1:5000/health
+
+      - name: Upload Bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.html

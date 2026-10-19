@@ -1,0 +1,39 @@
+=== [1] 无 token 访问受保护端点 (期望 401) ===
+{"error":"Missing Bearer token"}
+
+HTTP 401
+=== [2] 伪造 token 访问 (期望 401) ===
+{"error":"Invalid token"}
+
+HTTP 401
+=== [3] 注册用户 (期望 201, 返回 bcrypt 哈希前缀) ===
+{"message":"user registered","user":{"display_name":"Alice","password_hash_prefix":"$2b$12$aJABUCk8azwCp14lVVkHcu","username":"alice"}}
+
+HTTP 201
+=== [4] 重复注册 (期望 409) ===
+{"error":"username already exists"}
+
+HTTP 409
+=== [5] 错误密码登录 (期望 401) ===
+{"error":"invalid credentials"}
+
+HTTP 401
+=== [6] SQL 注入登录 ' OR 1=1-- (期望 401, 攻击失败) ===
+{"error":"invalid credentials"}
+
+HTTP 401
+=== [7] 正确密码登录 (期望 200 + JWT) ===
+{"expires_in":1800,"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJhbGljZSIsImlhdCI6MTc5MjM4MzQ4NSwiZXhwIjoxNzkyMzg1Mjg1fQ.ORtwIT6vQpWzmmBC5s5yjAqYnxaNiyHnFnYsoBv3-qs","token_type":"Bearer"}
+
+=== [8] 携带有效 JWT 访问 /api/data (期望 200 + 数据) ===
+{"posts":[{"author":"alice","body":"Hello, secure world!","id":1,"title":"First post"},{"author":"bob","body":"Always use parameterized queries.","id":2,"title":"Security notes"}]}
+
+HTTP 200
+=== [9] XSS payload 存入 display_name (期望输出被转义) ===
+{"message":"user registered","user":{"display_name":"&lt;script&gt;alert(1)&lt;/script&gt;","password_hash_prefix":"$2b$12$MZgLcIrxFRH3APd96ZGP2O","username":"eve"}}
+
+HTTP 201
+=== [10] 篡改签名的 JWT (期望 401) ===
+{"error":"Invalid token"}
+
+HTTP 401
