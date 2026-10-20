@@ -186,7 +186,28 @@ Regression tests: `GET /` still returns `It works!` (200), the aliased `/icons/`
 
 Before choosing CVE-2021-42013 I reproduced an SSTI → RCE chain on the Vulhub `flask/ssti` environment (`{{233*233}}` → `54289`, gadget chain → `uid=33(www-data)`), analysed it (code/data confusion in `Template("Hello " + name)`) and fixed it (template-as-constant + input whitelist). Materials: `cve-ssti/` (evidence, `root-cause-analysis.md`, fix patch and layered verification). It is included as supplementary work; the graded CVE for this lab is **CVE-2021-42013** above.
 
-One extra check worth showing, because the replay evidence above is all rejected by the whitelist and therefore does not *by itself* prove the primary fix works: I also built an intermediate version with the whitelist **removed** and only the code/data separation in place. `/?name={{233*233}}` then comes back as inert literal text (`Hello {{233*233}}`) instead of `Hello 54289`, and the RCE gadget chain produces no output — the separation alone neutralises the SSTI. Screenshot: `cve-ssti/evidence/layered-verification.png`, log: `cve-ssti/evidence/layered_fix_verification.log`.
+**Before fix (vulnerable app mounted):** `/?name={{233*233}}` is evaluated server-side, and the Jinja2 gadget chain executes `id` on the server:
+
+![SSTI before fix](cve-ssti/evidence/before-fix-ssti.png)
+*Address bar `localhost:8000/?name={{233*233}}` → `Hello 54289` on the vulnerable app.*
+
+![SSTI RCE before fix](cve-ssti/evidence/before-fix-rce.png)
+*Terminal: the URL-encoded gadget chain runs `id` through `eval` — `uid=33(www-data)`.*
+
+**After fix (patched app mounted):** the same payloads are rejected by the input whitelist before reaching the template engine, and normal requests still work:
+
+![SSTI after fix rejected](cve-ssti/evidence/after-fix-rejected.png)
+*Same URL after the fix: `400 Bad Request — invalid characters in 'name' parameter`.*
+
+![SSTI regression ok](cve-ssti/evidence/regression-ok.png)
+*Regression: `/?name=World` still returns `Hello World`.*
+
+Raw transcripts: `cve-ssti/evidence/reproduce_before_fix.log`, `cve-ssti/evidence/verify_after_fix.log`.
+
+One extra check worth showing, because the replay evidence above is all rejected by the whitelist and therefore does not *by itself* prove the primary fix works: I also built an intermediate version with the whitelist **removed** and only the code/data separation in place. `/?name={{233*233}}` then comes back as inert literal text (`Hello {{233*233}}`) instead of `Hello 54289`, and the RCE gadget chain produces no output — the separation alone neutralises the SSTI. Log: `cve-ssti/evidence/layered_fix_verification.log`.
+
+![Layered verification](cve-ssti/evidence/layered-verification.png)
+*Whitelist disabled, separation only: `{{233*233}}` renders as inert literal text — the primary fix works on its own.*
 
 ---
 
