@@ -69,16 +69,16 @@ Triggers on **every push / pull request**:
 
 **Screenshots — all taken from the Actions page of run #17:**
 
-![CI pipeline passing](screenshots/ci-pipeline-success.png)
+![CI pipeline passing](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/ci-pipeline-success.png)
 *Run #17 — Status: Success, 38s, one artifact (`bandit-report`) produced.*
 
-![Bandit SAST step log in GitHub Actions](screenshots/ci-bandit-log.png)
+![Bandit SAST step log in GitHub Actions](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/ci-bandit-log.png)
 *The SAST step log inside the run: Bandit reports "No issues identified", 183 lines of code scanned and every severity counter (Undefined/Low/Medium/High) at zero, then writes `bandit-report.html` for the artifact. The single `#nosec B105` on the `"Bearer"` literal is a documented false positive — it is the HTTP auth scheme name, not a password.*
 
-![pip-audit SCA step log in GitHub Actions](screenshots/ci-pip-audit-log.png)
+![pip-audit SCA step log in GitHub Actions](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/ci-pip-audit-log.png)
 *The SCA step log inside the run: pip-audit reports "No known vulnerabilities found" for the pinned dependencies.*
 
-![Bandit HTML report](screenshots/bandit-report.png)
+![Bandit HTML report](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/bandit-report.png)
 *The `bandit-report` artifact itself — 0 issues found (183 lines of code scanned). Kept as a second view of the same scan.*
 
 **Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39275027221
@@ -102,7 +102,7 @@ Both trigger paths are exercised in this repository: push runs (the links above)
 
 Vulhub `httpd/CVE-2021-42013`: builds `vulhub/httpd:2.4.50` with `mod_cgi`/`mod_cgid` enabled and `<Directory /> Require all granted`, published on port 8080.
 
-![vulnerable target running](cve-2021-42013/evidence/docker-target-running.png)
+![vulnerable target running](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/docker-target-running.png)
 *`docker compose up -d` — container `cve-2021-42013-apache-1` Up, `Server: Apache/2.4.50 (Unix)`, port 8080→80.*
 
 ### Reproduction (before fix)
@@ -132,12 +132,12 @@ curl -s --path-as-is --data "echo;head -n1 /etc/passwd" \
 
 **Screenshot — file disclosure (before fix):**
 
-![path traversal before fix](cve-2021-42013/evidence/before-fix-traversal.png)
+![path traversal before fix](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/before-fix-traversal.png)
 *Browser on 2.4.50: a traversal URL under `/icons/` returns the container's `/etc/passwd` — a file far outside the document root.*
 
 **Screenshot — RCE (before fix):**
 
-![RCE before fix](cve-2021-42013/evidence/before-fix-rce.png)
+![RCE before fix](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/before-fix-rce.png)
 *The CGI traversal payload executes `id` on the server: `uid=1(daemon) gid=1(daemon) groups=1(daemon)`.*
 
 ### Root cause analysis
@@ -156,7 +156,7 @@ Files changed: `cve-2021-42013/fix/Dockerfile` and `cve-2021-42013/fix/docker-co
 
 Defence-in-depth recommendations for a real deployment (not applied to the lab image on purpose): keep `Require all denied` as the default for everything outside the docroot, enable CGI only where genuinely needed, and pin images by digest — 2.4.51 itself was superseded within weeks by 2.4.52 (CVE-2021-44790), which is a good reminder that "upgrade to the fixed version" means "upgrade to the *current* version".
 
-Applied with the standard cycle (`docker compose down` → edit Dockerfile → `docker compose up --build -d`). Raw output: [`cve-2021-42013/evidence/fix_applied.log`](cve-2021-42013/evidence/fix_applied.log) — the image rebuilds, `docker ps` shows the container Up, and the banner is now `Apache/2.4.51 (Unix)`.
+Applied with the standard cycle (`docker compose down` → edit Dockerfile → `docker compose up --build -d`). Raw output: [`cve-2021-42013/evidence/fix_applied.log`](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/fix_applied.log) — the image rebuilds, `docker ps` shows the container Up, and the banner is now `Apache/2.4.51 (Unix)`.
 
 ### Verification after fix (attack replay + regression)
 
@@ -172,12 +172,12 @@ Regression tests: `GET /` still returns `It works!` (200), the aliased `/icons/`
 
 **Screenshot — attack rejected after fix:**
 
-![after fix rejected](cve-2021-42013/evidence/after-fix-rejected.png)
+![after fix rejected](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/after-fix-rejected.png)
 *The same traversal URL that disclosed `/etc/passwd` on 2.4.50 now returns 400 Bad Request on 2.4.51.*
 
 **Screenshot — regression, normal page still works:**
 
-![after fix regression](cve-2021-42013/evidence/after-fix-regression.png)
+![after fix regression](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/after-fix-regression.png)
 *`http://localhost:8080/` on the fixed server still returns the default page.*
 
 ---
@@ -188,25 +188,25 @@ Before choosing CVE-2021-42013 I reproduced an SSTI → RCE chain on the Vulhub 
 
 **Before fix (vulnerable app mounted):** `/?name={{233*233}}` is evaluated server-side, and the Jinja2 gadget chain executes `id` on the server:
 
-![SSTI before fix](cve-ssti/evidence/before-fix-ssti.png)
+![SSTI before fix](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-ssti/evidence/before-fix-ssti.png)
 *Address bar `localhost:8000/?name={{233*233}}` → `Hello 54289` on the vulnerable app.*
 
-![SSTI RCE before fix](cve-ssti/evidence/before-fix-rce.png)
+![SSTI RCE before fix](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-ssti/evidence/before-fix-rce.png)
 *Terminal: the URL-encoded gadget chain runs `id` through `eval` — `uid=33(www-data)`.*
 
 **After fix (patched app mounted):** the same payloads are rejected by the input whitelist before reaching the template engine, and normal requests still work:
 
-![SSTI after fix rejected](cve-ssti/evidence/after-fix-rejected.png)
+![SSTI after fix rejected](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-ssti/evidence/after-fix-rejected.png)
 *Same URL after the fix: `400 Bad Request — invalid characters in 'name' parameter`.*
 
-![SSTI regression ok](cve-ssti/evidence/regression-ok.png)
+![SSTI regression ok](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-ssti/evidence/regression-ok.png)
 *Regression: `/?name=World` still returns `Hello World`.*
 
 Raw transcripts: `cve-ssti/evidence/reproduce_before_fix.log`, `cve-ssti/evidence/verify_after_fix.log`.
 
 One extra check worth showing, because the replay evidence above is all rejected by the whitelist and therefore does not *by itself* prove the primary fix works: I also built an intermediate version with the whitelist **removed** and only the code/data separation in place. `/?name={{233*233}}` then comes back as inert literal text (`Hello {{233*233}}`) instead of `Hello 54289`, and the RCE gadget chain produces no output — the separation alone neutralises the SSTI. Log: `cve-ssti/evidence/layered_fix_verification.log`.
 
-![Layered verification](cve-ssti/evidence/layered-verification.png)
+![Layered verification](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-ssti/evidence/layered-verification.png)
 *Whitelist disabled, separation only: `{{233*233}}` renders as inert literal text — the primary fix works on its own.*
 
 ---
@@ -251,5 +251,6 @@ The formal lab report — title page (lab number and title, variant, Surname and
 
 ## Notes
 
+- README images are linked through **jsDelivr** (`gcore.jsdelivr.net/gh/…@main/…`) instead of relative paths: GitHub serves README images from `raw.githubusercontent.com`, which is not reliably reachable from mainland-China networks. The images live in this repository (identical files, same paths) — cloning the repo works exactly as usual.
 - The Bandit HTML report is regenerated by every CI run and kept as the `bandit-report` artifact (downloadable from the run page); `screenshots/bandit-report.png` is the screenshot of that report.
 - The Vulhub working clone (`vulhub/`) is kept outside the repository on purpose; only the reproduction/fix artifacts and evidence are committed.
