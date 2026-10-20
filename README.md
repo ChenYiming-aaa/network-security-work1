@@ -83,7 +83,6 @@ Triggers on **every push / pull request**:
 
 **Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39275027221
 
-Both trigger paths are exercised in this repository: push runs (the links above) and a pull-request run — PR #1 (https://github.com/ChenYiming-aaa/network-security-work1/pull/1) ran the same pipeline on the `pull_request` event and passed before being merged.
 
 ---
 
