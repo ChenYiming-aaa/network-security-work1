@@ -14,3 +14,4 @@ server.log
 !cve-ssti/evidence/*.log
 !cve-2019-11043/evidence/*.log
 !evidence_api_verification.log
+report/*.backup-*.docx
