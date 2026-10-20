@@ -66,7 +66,7 @@ Triggers on **every push / pull request**:
    - This actually caught something: the initial pins (Flask 3.0.3, PyJWT 2.9.0) were flagged with 18 known advisories (e.g. PYSEC-2026-2151, PYSEC-2025-183). Upgrading to Flask 3.1.3 / PyJWT 2.15.0 cleared the audit — a concrete demonstration of why SCA belongs in the pipeline.
 3. **Smoke test**: boots the API and asserts that `GET /api/data` without a token answers **401** — the service is up and the JWT auth boundary is active.
 
-**Screenshots — all taken from the Actions page of run #25:**
+**Screenshots — all taken from the Actions page of run #26:**
 
 ![CI pipeline passing](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/ci-pipeline-success.png)
 *Run #25 — Status: Success, 31s, one artifact (`bandit-report`) produced.*
@@ -80,7 +80,7 @@ Triggers on **every push / pull request**:
 ![Bandit HTML report](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/bandit-report.png)
 *The `bandit-report` artifact itself — 0 issues found (183 lines of code scanned). Kept as a second view of the same scan.*
 
-**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39387647377
+**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39396218765
 
 
 ---
@@ -231,7 +231,7 @@ The formal lab report — title page (lab number and title, variant, Surname and
 |---|---|
 | Public Git repository | https://github.com/ChenYiming-aaa/network-security-work1 |
 | This README | `README.md` |
-| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39387647377 |
+| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39396218765 |
 | Fixed files folder | `cve-2019-11043/fix/` (`docker-compose.yml`, original in `fix/original/`) |
 | CVE reproduction & verification evidence | `cve-2019-11043/evidence/` (logs + screenshots) |
 | Root cause analysis | `cve-2019-11043/root-cause-analysis.md` |
