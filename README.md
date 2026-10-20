@@ -211,23 +211,6 @@ One extra check worth showing, because the replay evidence above is all rejected
 
 ---
 
-## Development notes — what actually went wrong along the way
-
-(I keep this section because the mistakes were the most educational part of the work.)
-
-**`safety` broke, so the SCA step became `pip-audit`.** I first wired `safety check` into the CI as the SCA tool. It blew up on the Python 3.12 runner with `No module named pkg_resources` — safety still leans on setuptools' implicit `pkg_resources`, which 3.12 no longer ships. Rather than fight a deprecated tool I switched to `pip-audit`, the PyPA-maintained equivalent. Honest admission: that switch was forced, not clever.
-
-**Then pip-audit immediately caught 18 advisories in my "safe" pins.** I had pinned Flask 3.0.3 and PyJWT 2.9.0 — recent, so I assumed clean. pip-audit listed 18 known advisories (PYSEC-2026-2151, PYSEC-2025-183, …) and failed the build. Bumping to Flask 3.1.3 / PyJWT 2.15.0 cleared it. That single red run taught me more about why SCA exists than any green checkmark would have.
-
-**`.gitignore` ate my evidence.** I had written `*.log` plus `screenshots/` into `.gitignore` early on. When it was time to commit the evidence, no log file would `git add` — I spent a while convinced the files were corrupt before spotting the ignore rule. The fix was negation patterns (`!cve-ssti/evidence/*.log`, `!evidence_api_verification.log`); the screenshots needed the same treatment. Classic.
-
-**A screenshot that lied to me for ten minutes.** While retaking the "after fix" evidence for the SSTI lab I kept getting the *vulnerable* behaviour in the browser even though the patch was applied — no wait, the other way around: the first "before fix" screenshot came back as `400 Bad Request` when I was expecting the RCE output. I stared at the patch convinced the fix was wrong before realising the container was still serving the previous source file; the `docker compose restart` had happened before I copied the file in. Evidence rule learned the hard way: after touching the mounted source, restart *and then* verify with curl before screenshotting anything.
-
-**The first CVE-2021-41773 payload does not work on 2.4.50.** My first traversal attempt used the `icons/.%2e/%2e%2e/…` spelling from public write-ups and got a 404 — that is the *old* bug, and 2.4.50 patched exactly that. Finding the doubly-encoded `.%%32%65` bypass (and understanding *why* it works — it only decodes to `..` after the check) was the point where this stopped being copy-paste and became actual analysis. That is also what the root-cause document is built around.
-
-**On the CVE choice.** The manual's suggested `vulhub/flask/CVE-2018-1000656` is simply gone from the current Vulhub repo — only `flask/ssti` is left, and it has no CVE number. I picked `httpd/CVE-2021-42013` to keep the "real CVE with an ID" requirement satisfied, and kept the SSTI environment as the supplementary appendix instead of throwing the work away.
-
----
 
 ## Course report
 
