@@ -32,12 +32,15 @@ jobs:
           # Audits pinned requirements against the PyPA vulnerability database; non-zero exit on any known CVE
           pip-audit -r requirements.txt --strict
 
-      - name: Smoke test - API starts and health endpoint responds
+      - name: Smoke test - API starts and auth boundary responds
         run: |
           python -c "from app import init_db; init_db()"
           nohup python -m flask --app app run --port 5000 &
           sleep 3
-          curl -sf http://127.0.0.1:5000/health
+          # GET /api/data without a token must answer 401: the API is up and the JWT gate is active
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5000/api/data)
+          echo "GET /api/data (no token) -> HTTP $code"
+          test "$code" = "401"
 
       - name: Upload Bandit report
         if: always()
