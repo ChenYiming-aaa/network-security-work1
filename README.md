@@ -6,7 +6,6 @@ This repository contains two parts:
 
 1. **`/` (root)** — a hardened Flask REST API with OWASP Top-10 baseline protections, plus a GitHub Actions pipeline that runs SAST + SCA on every push.
 2. **`/cve-2019-11043`** — reproduction, root-cause analysis, fix and verification of **CVE-2019-11043** (PHP-FPM 7.2 path-info buffer underflow → RCE behind nginx) from Vulhub.
-3. *Appendix:* `/cve-ssti` — an additional Vulhub environment (Flask SSTI → RCE) that I studied before settling on CVE-2019-11043; kept here as supplementary material.
 
 ---
 
@@ -53,9 +52,7 @@ Full request/response evidence (10 test cases, including the failure branches): 
 
 **XSS prevention.** All user-controlled output (`display_name`, post fields) goes through `markupsafe.escape()` before being returned. Registering a user with `display_name = <script>alert(1)</script>` returns `&lt;script&gt;…` (item [9]).
 
-**Authentication.** Login issues a **JWT** (PyJWT, HS256, 30-minute `exp`). A decorator middleware guards every protected endpoint: it parses the `Authorization: Bearer` header, verifies the signature and expiry, and pins the algorithm whitelist to HS256 (blocks `alg`-confusion). Passwords are hashed with **bcrypt** (random salt, deliberately slow — unlike plain SHA-256, which is fast and unsalted and therefore cheap to brute-force). As one extra hardening detail, when the username does not exist the server still runs one bcrypt comparison against a dummy hash so that "unknown user" and "wrong password" take the same time.
-
-`JWT_SECRET` is read from an environment variable; the app refuses to start without it, so no secret is ever committed.
+**Authentication.** Login issues a **JWT** (PyJWT, HS256, 30-minute `exp`). A decorator middleware guards every protected endpoint: it parses the `Authorization: Bearer` header, verifies the signature and expiry, and pins the algorithm whitelist to HS256 (blocks `alg`-confusion). Passwords are hashed with **bcrypt** (random salt, deliberately slow — unlike plain SHA-256, which is fast and unsalted and therefore cheap to brute-force). `JWT_SECRET` is read from an environment variable; the app refuses to start without it, so no secret is ever committed.
 
 ### CI/CD — SAST + SCA (`.github/workflows/ci.yml`)
 
@@ -63,25 +60,20 @@ Triggers on **every push / pull request**:
 
 1. **SAST — Bandit**: static security analysis of the code; the verdict is printed to the job log and an HTML report is uploaded as a build artifact; medium+ severity findings fail the build.
 2. **SCA — pip-audit** (PyPA): checks the pinned dependencies in `requirements.txt` against the PyPA vulnerability database; any known advisory fails the build.
-   - This actually caught something: the initial pins (Flask 3.0.3, PyJWT 2.9.0) were flagged with 18 known advisories (e.g. PYSEC-2026-2151, PYSEC-2025-183). Upgrading to Flask 3.1.3 / PyJWT 2.15.0 cleared the audit — a concrete demonstration of why SCA belongs in the pipeline.
 3. **Smoke test**: boots the API and asserts that `GET /api/data` without a token answers **401** — the service is up and the JWT auth boundary is active.
 
-**Screenshots — all taken from the Actions page of run #26:**
+**Screenshots — all taken from the Actions page of run #27:**
 
 ![CI pipeline passing](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/ci-pipeline-success.png)
-*Run #25 — Status: Success, 31s, one artifact (`bandit-report`) produced.*
+*Run #27 — Status: Success, 44s total, one artifact (`bandit-report`) produced.*
 
 ![Bandit SAST step log in GitHub Actions](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/ci-bandit-log.png)
-*The SAST step log inside the run: Bandit reports "No issues identified", 183 lines of code scanned and every severity counter (Undefined/Low/Medium/High) at zero, then writes `bandit-report.html` for the artifact. The single `#nosec B105` on the `"Bearer"` literal is a documented false positive — it is the HTTP auth scheme name, not a password.*
+*The SAST step log inside the run: Bandit reports "No issues identified", 180 lines of code scanned and every severity counter (Undefined/Low/Medium/High) at zero, then writes `bandit-report.html` for the artifact.*
 
 ![pip-audit SCA step log in GitHub Actions](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/ci-pip-audit-log.png)
 *The SCA step log inside the run: pip-audit reports "No known vulnerabilities found" for the pinned dependencies.*
 
-![Bandit HTML report](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/bandit-report.png)
-*The `bandit-report` artifact itself — 0 issues found (183 lines of code scanned). Kept as a second view of the same scan.*
-
-**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39396218765
-
+**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39402052629
 
 ---
 
@@ -158,8 +150,6 @@ Files changed: `cve-2019-11043/fix/docker-compose.yml` (the vulnerable originals
 
 **Primary fix — upgrade the PHP image to the version where the CVE is fixed**: `image: vulhub/php:7.2.10-fpm` → `image: php:7.2.24-fpm` (7.2.24 contains the upstream fix for PHP bug #78599: `init_request_info()` now validates that the `PATH_INFO` value is consistent with the script filename before doing any pointer arithmetic, so the empty-`PATH_INFO` case can no longer produce an out-of-bounds pointer). The nginx service and the `default.conf` (including the misconfigured `fastcgi_split_path_info` block) are deliberately kept **identical** to the vulnerable environment — that way the verification below proves the attack dies because of the version fix itself, not because I hardened the configuration.
 
-Defence-in-depth recommendations for a real deployment (not applied to the lab image on purpose): don't pass `PATH_INFO` when it can be empty (tighten the regex or add a `try_files $fastcgi_script_name =404;` guard), set `cgi.fix_pathinfo=0` if the app doesn't use path-info URLs, run php-fpm with least privileges, and pin images by digest — the floating `nginx:1` tag silently drifts (it resolved to nginx 1.31.7 here).
-
 Applied with the standard cycle (`docker compose down` → edit `fix/docker-compose.yml` → `docker compose up -d`). Raw output: [`cve-2019-11043/evidence/verify_after_fix.log`](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-2019-11043/evidence/verify_after_fix.log) — `docker ps` shows the container Up and the banner is now `X-Powered-By: PHP/7.2.24`.
 
 ### Verification after fix (attack replay + regression)
@@ -187,39 +177,9 @@ Regression tests: `GET /index.php` still returns `hello world` (200, `X-Powered-
 
 ---
 
-## Appendix — extra environment studied (`/cve-ssti`)
-
-Before choosing CVE-2019-11043 I reproduced an SSTI → RCE chain on the Vulhub `flask/ssti` environment (`{{233*233}}` → `54289`, gadget chain → `uid=33(www-data)`), analysed it (code/data confusion in `Template("Hello " + name)`) and fixed it (template-as-constant + input whitelist). Materials: `cve-ssti/` (evidence, `root-cause-analysis.md`, fix patch and layered verification). It is included as supplementary work; the graded CVE for this lab is **CVE-2019-11043** above.
-
-**Before fix (vulnerable app mounted):** `/?name={{233*233}}` is evaluated server-side, and the Jinja2 gadget chain executes `id` on the server:
-
-![SSTI before fix](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-ssti/evidence/before-fix-ssti.png)
-*Address bar `localhost:8000/?name={{233*233}}` → `Hello 54289` on the vulnerable app.*
-
-![SSTI RCE before fix](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-ssti/evidence/before-fix-rce.png)
-*Terminal: the URL-encoded gadget chain runs `id` through `eval` — `uid=33(www-data)`.*
-
-**After fix (patched app mounted):** the same payloads are rejected by the input whitelist before reaching the template engine, and normal requests still work:
-
-![SSTI after fix rejected](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-ssti/evidence/after-fix-rejected.png)
-*Same URL after the fix: `400 Bad Request — invalid characters in 'name' parameter`.*
-
-![SSTI regression ok](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-ssti/evidence/regression-ok.png)
-*Regression: `/?name=World` still returns `Hello World`.*
-
-Raw transcripts: `cve-ssti/evidence/reproduce_before_fix.log`, `cve-ssti/evidence/verify_after_fix.log`.
-
-One extra check worth showing, because the replay evidence above is all rejected by the whitelist and therefore does not *by itself* prove the primary fix works: I also built an intermediate version with the whitelist **removed** and only the code/data separation in place. `/?name={{233*233}}` then comes back as inert literal text (`Hello {{233*233}}`) instead of `Hello 54289`, and the RCE gadget chain produces no output — the separation alone neutralises the SSTI. Log: `cve-ssti/evidence/layered_fix_verification.log`.
-
-![Layered verification](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/cve-ssti/evidence/layered-verification.png)
-*Whitelist disabled, separation only: `{{233*233}}` renders as inert literal text — the primary fix works on its own.*
-
----
-
-
 ## Course report
 
-The formal lab report — title page (lab number and title, variant, Surname and Name, HDU ID), purpose, the full write-up of both the API and CVE parts, and answers to the control questions — is submitted as a document alongside this repository:
+The formal lab report — title page (lab number and title, variant, Surname and Name, HDU ID), purpose, the full write-up of both the API and CVE parts — is submitted as a document alongside this repository:
 
 - [`report/Work1_Report_Chen_Yiming_23320218.docx`](report/) — formal report (docx).
 
@@ -231,14 +191,8 @@ The formal lab report — title page (lab number and title, variant, Surname and
 |---|---|
 | Public Git repository | https://github.com/ChenYiming-aaa/network-security-work1 |
 | This README | `README.md` |
-| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39396218765 |
+| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39402052629 |
 | Fixed files folder | `cve-2019-11043/fix/` (`docker-compose.yml`, original in `fix/original/`) |
 | CVE reproduction & verification evidence | `cve-2019-11043/evidence/` (logs + screenshots) |
 | Root cause analysis | `cve-2019-11043/root-cause-analysis.md` |
 | Formal course report | `report/Work1_Report_Chen_Yiming_23320218.docx` |
-
-## Notes
-
-- README images are linked through **jsDelivr** (`gcore.jsdelivr.net/gh/…@main/…`) instead of relative paths: GitHub serves README images from `raw.githubusercontent.com`, which is not reliably reachable from mainland-China networks. The images live in this repository (identical files, same paths) — cloning the repo works exactly as usual.
-- The Bandit HTML report is regenerated by every CI run and kept as the `bandit-report` artifact (downloadable from the run page); `screenshots/bandit-report.png` is the screenshot of that report.
-- The Vulhub working clone (`vulhub/`) is kept outside the repository on purpose; only the reproduction/fix artifacts and evidence are committed.
