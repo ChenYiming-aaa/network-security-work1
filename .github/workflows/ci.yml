@@ -8,6 +8,8 @@ jobs:
     env:
       # app.py refuses to start without JWT_SECRET; use a CI-only throwaway value
       JWT_SECRET: ci-smoke-test-only-secret
+      # keep CI logs clean: suppress the "A new release of pip is available" notice
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v5
 
