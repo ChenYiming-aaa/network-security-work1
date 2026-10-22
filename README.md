@@ -62,18 +62,18 @@ Triggers on **every push / pull request**:
 2. **SCA — pip-audit** (PyPA): checks the pinned dependencies in `requirements.txt` against the PyPA vulnerability database; any known advisory fails the build.
 3. **Smoke test**: boots the API and asserts that `GET /api/data` without a token answers **401** — the service is up and the JWT auth boundary is active.
 
-**Screenshots — all taken from the Actions page of run #31:**
+**Screenshots — all taken from the Actions page of run #33:**
 
 ![CI pipeline passing](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/ci-pipeline-success.png)
-*Run #31 — Status: Success, 37s total, one artifact (`bandit-report`) produced.*
+*Run #33 — Status: Success, 30s total, one artifact (`bandit-report`) produced.*
 
 ![Bandit SAST step log in GitHub Actions](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/ci-bandit-log.png)
-*The SAST step log inside the run: Bandit reports "No issues identified", 180 lines of code scanned and every severity counter (Undefined/Low/Medium/High) at zero, then writes `bandit-report.html` for the artifact.*
+*The SAST step log inside the run: Bandit reports "No issues identified", 181 lines of code scanned and every severity counter (Undefined/Low/Medium/High) at zero, then writes `bandit-report.html` for the artifact.*
 
 ![pip-audit SCA step log in GitHub Actions](https://gcore.jsdelivr.net/gh/ChenYiming-aaa/network-security-work1@main/screenshots/ci-pip-audit-log.png)
 *The SCA step log inside the run: pip-audit reports "No known vulnerabilities found" for the pinned dependencies.*
 
-**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39550217994
+**Pipeline link (last successful run):** https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39713147953
 
 ---
 
@@ -191,7 +191,7 @@ The formal lab report — title page (lab number and title, variant, Surname and
 |---|---|
 | Public Git repository | https://github.com/ChenYiming-aaa/network-security-work1 |
 | This README | `README.md` |
-| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39550217994 |
+| CI pipeline link (last successful run) | https://github.com/ChenYiming-aaa/network-security-work1/actions/runs/39713147953 |
 | Fixed files folder | `cve-2019-11043/fix/` (`docker-compose.yml`, original in `fix/original/`) |
 | CVE reproduction & verification evidence | `cve-2019-11043/evidence/` (logs + screenshots) |
 | Root cause analysis | `cve-2019-11043/root-cause-analysis.md` |
