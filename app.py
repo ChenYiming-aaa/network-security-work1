@@ -27,6 +27,8 @@ if "JWT_SECRET" not in os.environ:
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
 TOKEN_TTL_MINUTES = 30
+# RFC 6749 token 响应里的认证方案名，协议常量而非密钥（避免 SAST 把 token_type 的值误报为硬编码密码）
+BEARER_SCHEME = "Bearer"
 
 
 def get_db():
@@ -162,7 +164,7 @@ def login():
         "exp": datetime.now(timezone.utc) + timedelta(minutes=TOKEN_TTL_MINUTES),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return jsonify({"token": token, "token_type": "Bearer", "expires_in": TOKEN_TTL_MINUTES * 60})  # nosec B105 - "Bearer" 是 HTTP 认证方案名，不是密码
+    return jsonify({"token": token, "token_type": BEARER_SCHEME, "expires_in": TOKEN_TTL_MINUTES * 60})
 
 
 @app.get("/api/data")
